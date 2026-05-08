@@ -16,9 +16,14 @@ export interface ResizedImage {
   height: number;
 }
 
-const TARGET_LONG_EDGE = 3840;
+// 2560 px is the sweet spot for retina mobile: an iPhone 14 Pro at viewport
+// 393×852 with devicePixelRatio=3 needs at most 2556 device pixels in the
+// taller dimension for cover-mode rendering. Anything bigger is wasted bytes.
+// WebP at q90 reads visually identical to JPEG q92 while being ~3× smaller,
+// so we get retina-perfect sharpness AND fast mobile loads.
+const TARGET_LONG_EDGE = 2560;
 const QUALITY = 0.9;
-const OUTPUT_TYPE = 'image/jpeg';
+const OUTPUT_TYPE = 'image/webp';
 
 export async function resizeImage(file: File): Promise<ResizedImage> {
   const bitmap = await loadBitmap(file);

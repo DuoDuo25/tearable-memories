@@ -9,9 +9,9 @@ const BASE = import.meta.env.BASE_URL;
  * After all 3 are torn, the hidden ending reveals.
  */
 export const DEFAULT_PHOTOS: Photo[] = [
-  { src: `${BASE}photos/01-lacha.jpg`,     title: '2026-04-29', subtitle: '@Lacha Thailand' },
-  { src: `${BASE}photos/02-rome.jpg`,      title: '2025-10-10', subtitle: '@Rome Italy' },
-  { src: `${BASE}photos/03-edinburgh.jpg`, title: '2025-01-28', subtitle: '@Edinburgh United Kingdom' },
+  { src: `${BASE}photos/01-lacha.webp`,     title: '2026-04-29', subtitle: '@Lacha Thailand' },
+  { src: `${BASE}photos/02-rome.webp`,      title: '2025-10-10', subtitle: '@Rome Italy' },
+  { src: `${BASE}photos/03-edinburgh.webp`, title: '2025-01-28', subtitle: '@Edinburgh United Kingdom' },
 ];
 
 export const DEFAULT_ENDING = {
