@@ -384,6 +384,22 @@ class Cloth {
     return true;
   }
 
+  /**
+   * Fraction of points that have left the viewport. Used to detach physics +
+   * render for fully-fallen debris layers so the active top stays responsive.
+   */
+  offRatio(W: number, H: number): number {
+    const xMin = -W * 0.05, xMax = W * 1.05;
+    const yMin = -H * 0.05, yMax = H * 1.08;
+    const pts = this.points;
+    let off = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (p.x < xMin || p.x > xMax || p.y < yMin || p.y > yMax) off++;
+    }
+    return off / pts.length;
+  }
+
   render(ctx: CanvasRenderingContext2D) {
     const { cols, rows, points: pts, texture: tex } = this;
     const maxStretch = 3.0;
@@ -606,21 +622,18 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
     if (dt > 1 / 30) dt = 1 / 30;
     lastT = now;
 
+    // Physics: active top + non-fully-gone debris. Once a debris layer's
+    // points are mostly off-screen there's nothing visible to update — keep
+    // those frames cheap so the active top stays responsive to input.
     for (let i = 0; i < layers.length; i++) {
-      if (i >= currentTopIdx) layers[i].update(dt);
+      if (i < currentTopIdx) continue;
+      if (i !== currentTopIdx && layers[i].offRatio(W, H) > 0.7) continue;
+      layers[i].update(dt);
     }
 
     if (currentTopIdx >= 0 && !endingRevealed) {
       const top = layers[currentTopIdx];
-      const pts = top.points;
-      let off = 0;
-      const xMin = -W * 0.05, xMax = W * 1.05;
-      const yMin = -H * 0.05, yMax = H * 1.08;
-      for (let i = 0; i < pts.length; i++) {
-        const p = pts[i];
-        if (p.x < xMin || p.x > xMax || p.y < yMin || p.y > yMax) off++;
-      }
-      const offRatio = off / pts.length;
+      const offRatio = top.offRatio(W, H);
 
       // Single threshold across all layers: 22% torn or 28% off-screen.
       // Previously we used 45% for layer-demote and 22% only for the ending
@@ -656,13 +669,21 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
       ctx.drawImage(layers[i].texture, 0, 0);
     }
 
-    for (let i = currentTopIdx; i < layers.length; i++) {
-      if (!layers[i].isPristine()) layers[i].renderShadow(ctx, dpr);
-    }
+    // Drop shadow only on the active top layer. Shadow rendering uses
+    // ctx.filter='blur(...)', the single most expensive Canvas-2D op in
+    // this scene; doing it for debris layers (i > currentTopIdx) is what
+    // makes the next-layer tear feel laggy while the previous one is still
+    // falling. Debris doesn't really need a contact shadow anyway.
+    const topLayer = layers[currentTopIdx];
+    if (topLayer && !topLayer.isPristine()) topLayer.renderShadow(ctx, dpr);
 
+    // Top + debris. Skip drawing debris that's mostly off-screen — what's
+    // still visible stays; the rest is invisible work that only steals frames.
     for (let i = currentTopIdx; i < layers.length; i++) {
-      if (layers[i].isPristine()) ctx.drawImage(layers[i].texture, 0, 0);
-      else                        layers[i].render(ctx);
+      const cl = layers[i];
+      if (i !== currentTopIdx && cl.offRatio(W, H) > 0.85) continue;
+      if (cl.isPristine()) ctx.drawImage(cl.texture, 0, 0);
+      else                 cl.render(ctx);
     }
 
     const grad = ctx.createRadialGradient(
