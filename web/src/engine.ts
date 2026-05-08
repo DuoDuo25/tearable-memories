@@ -588,6 +588,16 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
 
   resize();
   buildScene();
+  // Diagnostic log so a user / agent can paste it back when reporting issues.
+  // eslint-disable-next-line no-console
+  console.log('[tearable-memories] booted', {
+    dpr,
+    isMobile,
+    canvasSize: { W, H, css: { w: window.innerWidth, h: window.innerHeight } },
+    grid: { cols: TOP_COLS, rows: TOP_ROWS },
+    layers: layers.length,
+    photoSizes: loaded.map(p => ({ src: p.src, w: p.img.naturalWidth, h: p.img.naturalHeight })),
+  });
   raf = requestAnimationFrame(frame);
 
   return {

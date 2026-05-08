@@ -5,16 +5,16 @@
  *   /api/*         → login required
  *   /api/public/*  → optional auth (we live here — anonymous app)
  *   /api/webhooks/* → no auth check
- *
- * Phase 2 only ships /api/public/health. Real album endpoints arrive in
- * Phase 3 (POST/GET/PUT /api/public/albums + presigned uploads).
  */
 
-import { Hono } from "hono";
+import { Hono } from 'hono';
+import { albumsRoutes } from './routes/albums';
 
 const app = new Hono()
-  .get("/api/public/health", (c) =>
-    c.json({ ok: true, service: "tearable-memories", phase: 2 })
+  .get('/api/public/health', (c) =>
+    c.json({ ok: true, service: 'tearable-memories', phase: 3 })
   );
+
+app.route('/api/public/albums', albumsRoutes);
 
 export default app;

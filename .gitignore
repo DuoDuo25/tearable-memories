@@ -64,3 +64,5 @@ temp/
 # Lock files (regenerated on npm install)
 server/package-lock.json
 web/package-lock.json
+.wrangler/
+.edgespark/state/
