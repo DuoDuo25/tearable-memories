@@ -622,18 +622,14 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
       }
       const offRatio = off / pts.length;
 
-      // Different thresholds for layer-demote vs ending-reveal:
-      //  - Demoting a layer to expose the next photo: 45% gives a satisfying
-      //    "fully torn through" feel before progression.
-      //  - Revealing the hidden ending on the last layer: 22% / 28% — the
-      //    moment the user has clearly committed to tearing this last one,
-      //    the message appears (combined with the 1.4s CSS fade-in this
-      //    feels like the message is *emerging* from the tears, not waiting
-      //    behind a fully-shredded barrier).
-      const torn =
-        currentTopIdx > 0
-          ? (top.tornRatio() > 0.45 || offRatio > 0.45)
-          : (top.tornRatio() > 0.22 || offRatio > 0.28);
+      // Single threshold across all layers: 22% torn or 28% off-screen.
+      // Previously we used 45% for layer-demote and 22% only for the ending
+      // reveal — but the user reported "the upper photo looks almost fully
+      // torn yet I still can't grab the next one." That's 45% gating past
+      // the visual point at which the cloth feels done. Matching the demote
+      // threshold to the ending one makes progression feel consistent: the
+      // moment a layer reads as torn, you can dig into the next.
+      const torn = top.tornRatio() > 0.22 || offRatio > 0.28;
       if (torn) {
         if (currentTopIdx > 0) currentTopIdx--;
         else {
