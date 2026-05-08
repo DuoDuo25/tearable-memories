@@ -80,3 +80,19 @@ export function finalizeAlbum(id: string, editToken: string): Promise<{ ok: true
 export function readAlbum(id: string): Promise<ReadAlbumResponse> {
   return jsonFetch<ReadAlbumResponse>(`/api/public/albums/${id}`);
 }
+
+export interface UpdateAlbumBody {
+  photos: Array<{ title: string; subtitle: string }>;
+  ending_title?: string;
+  ending_sub?: string;
+  cta_label?: string;
+}
+
+/** Token-gated caption / ending update. Photos themselves are not replaced. */
+export function updateAlbum(id: string, editToken: string, body: UpdateAlbumBody): Promise<{ ok: true; id: string }> {
+  return jsonFetch(`/api/public/albums/${id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-edit-token': editToken },
+    body: JSON.stringify(body),
+  });
+}
