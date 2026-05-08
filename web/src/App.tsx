@@ -112,6 +112,14 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [builderOpen]);
 
+  // 4. Hash changes (success-card link from template → viewer, manual edit
+  // URL paste, etc.) — reload so the route logic re-runs cleanly.
+  useEffect(() => {
+    const onHash = () => window.location.reload();
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
   return (
     <>
       <canvas ref={canvasRef} className="fixed top-0 left-0 block" />

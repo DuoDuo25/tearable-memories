@@ -4,6 +4,7 @@ import {
   createAlbum, uploadToPresigned, finalizeAlbum, updateAlbum,
   type ReadAlbumResponse,
 } from '../lib/api';
+import { viewerPath, editorPath } from '../lib/route';
 
 const MIN_SLOTS = 1;
 const MAX_SLOTS = 5;
@@ -450,8 +451,8 @@ interface SuccessCardProps {
 
 function SuccessCard({ id, editToken, isUpdate, onClose }: SuccessCardProps) {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const publicUrl = `${origin}/m/${id}`;
-  const editUrl = `${origin}/m/${id}/edit?t=${editToken}`;
+  const publicUrl = `${origin}${viewerPath(id)}`;
+  const editUrl = `${origin}${editorPath(id, editToken)}`;
 
   return (
     <div className="p-8 sm:p-10 space-y-6">
