@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0d0d0f;
+  font-family: "Inter", "Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: grab;
+}
+
+body.grabbing { cursor: grabbing; }
+
+#root { width: 100%; height: 100%; }

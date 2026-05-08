@@ -1,0 +1,13 @@
+project_id = "a0b705b2-252d-47a4-a86a-03361e744d0e"
+
+[server]
+path = "server"
+
+[web]
+path = "web"
+output_path = "web/dist"
+
+[db]
+# Allow `edgespark db migrate` from this feature branch during MVP build-out.
+# Default policy is main-only; this override is removed when feat merges.
+migration_branch = "feat/edgespark-builder"
