@@ -7,7 +7,6 @@ import { Loader } from './components/Loader';
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handleRef = useRef<EngineHandle | null>(null);
-  const [endingRevealed, setEndingRevealed] = useState(false);
   const [loaderFading, setLoaderFading] = useState(false);
   const [loaderMessage, setLoaderMessage] = useState<string | undefined>();
 
@@ -18,8 +17,11 @@ export default function App() {
         const handle = await boot({
           canvas: canvasRef.current!,
           photos: DEFAULT_PHOTOS,
-          ending: { title: DEFAULT_ENDING.title, sub: DEFAULT_ENDING.sub },
-          onEndingReveal: () => setEndingRevealed(true),
+          ending: {
+            title: DEFAULT_ENDING.title,
+            sub: DEFAULT_ENDING.sub,
+            ctaLabel: DEFAULT_ENDING.ctaLabel,
+          },
         });
         if (cancelled) { handle.destroy(); return; }
         handleRef.current = handle;
@@ -33,7 +35,6 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'r' || e.key === 'R') {
         handleRef.current?.reset();
-        setEndingRevealed(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -50,8 +51,6 @@ export default function App() {
     <>
       <canvas ref={canvasRef} className="fixed top-0 left-0 block" />
       <Ending
-        ctaLabel={DEFAULT_ENDING.ctaLabel}
-        revealed={endingRevealed}
         onCta={() => alert('Builder coming in Phase 4 — for now, this just confirms the CTA wiring works.')}
       />
       <Loader fading={loaderFading} message={loaderMessage} />

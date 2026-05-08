@@ -23,7 +23,17 @@ export interface Photo {
 export interface EndingText {
   title: string;
   sub: string;
+  ctaLabel: string;
 }
+
+/** Stable button geometry shared by the canvas painter and the DOM hit-target. */
+export const ENDING_CTA_GEOMETRY = {
+  /** Used directly as a CSS value for `bottom`. Matches both DOM and canvas paint. */
+  bottomCss: 'clamp(48px, 12vh, 120px)',
+  /** CSS-pixel hit area — generous enough to catch finger taps. */
+  hitWidthCss: 280,
+  hitHeightCss: 64,
+};
 
 export interface BootOptions {
   canvas: HTMLCanvasElement;
@@ -210,8 +220,56 @@ function drawEndingTexture(W: number, H: number, dpr: number, ending: EndingText
   x.shadowBlur = 30 * dpr;
   drawWrappedText(x, ending.sub, W / 2, H / 2 + subSize * 0.2, W * 0.85, subSize * 1.18);
 
+  // CTA button — white pill, painted as part of the canvas backdrop so it
+  // peeks through tears the same way the title/subtitle do. Click handling
+  // lives on a transparent DOM overlay positioned to match (see Ending.tsx).
+  if (ending.ctaLabel) {
+    const btnFontSize = 14 * dpr;
+    x.font = `700 ${btnFontSize}px 'Inter', 'Helvetica Neue', sans-serif`;
+    const labelText = `${ending.ctaLabel}  →`;
+    const labelW = x.measureText(labelText).width;
+    const padX = 28 * dpr;
+    const btnW = labelW + padX * 2;
+    const btnH = 56 * dpr;
+    // Match DOM `bottom: clamp(48px, 12vh, 120px)` — the larger of 48 css-px
+    // and 12% of viewport height, capped at 120 css-px.
+    const bottomGap = Math.min(120 * dpr, Math.max(48 * dpr, H * 0.12));
+    const btnY = H - bottomGap - btnH;
+    const btnX = W / 2 - btnW / 2;
+
+    x.shadowColor = 'rgba(0,0,0,0.55)';
+    x.shadowBlur = 36 * dpr;
+    x.shadowOffsetY = 14 * dpr;
+    x.fillStyle = 'rgba(255,255,255,0.98)';
+    roundedRect(x, btnX, btnY, btnW, btnH, btnH / 2);
+    x.fill();
+    x.shadowBlur = 0;
+    x.shadowOffsetY = 0;
+
+    x.fillStyle = '#0d0d0f';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText(labelText, W / 2, btnY + btnH / 2);
+  }
+
   x.shadowBlur = 0;
   return c;
+}
+
+function roundedRect(
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
 }
 
 function drawSpacedText(ctx: CanvasRenderingContext2D, text: string, cx: number, y: number, spacing: number) {
