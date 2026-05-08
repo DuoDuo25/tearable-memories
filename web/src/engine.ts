@@ -525,7 +525,19 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
         if (p.x < xMin || p.x > xMax || p.y < yMin || p.y > yMax) off++;
       }
       const offRatio = off / pts.length;
-      const torn = top.tornRatio() > 0.45 || offRatio > 0.45;
+
+      // Different thresholds for layer-demote vs ending-reveal:
+      //  - Demoting a layer to expose the next photo: 45% gives a satisfying
+      //    "fully torn through" feel before progression.
+      //  - Revealing the hidden ending on the last layer: 22% / 28% — the
+      //    moment the user has clearly committed to tearing this last one,
+      //    the message appears (combined with the 1.4s CSS fade-in this
+      //    feels like the message is *emerging* from the tears, not waiting
+      //    behind a fully-shredded barrier).
+      const torn =
+        currentTopIdx > 0
+          ? (top.tornRatio() > 0.45 || offRatio > 0.45)
+          : (top.tornRatio() > 0.22 || offRatio > 0.28);
       if (torn) {
         if (currentTopIdx > 0) currentTopIdx--;
         else {
