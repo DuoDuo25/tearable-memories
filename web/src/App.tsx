@@ -18,6 +18,7 @@ export default function App() {
         const handle = await boot({
           canvas: canvasRef.current!,
           photos: DEFAULT_PHOTOS,
+          ending: { title: DEFAULT_ENDING.title, sub: DEFAULT_ENDING.sub },
           onEndingReveal: () => setEndingRevealed(true),
         });
         if (cancelled) { handle.destroy(); return; }
@@ -49,9 +50,7 @@ export default function App() {
     <>
       <canvas ref={canvasRef} className="fixed top-0 left-0 block" />
       <Ending
-        title={DEFAULT_ENDING.title}
-        sub={DEFAULT_ENDING.sub}
-        ctaLabel={`${DEFAULT_ENDING.ctaLabel} →`}
+        ctaLabel={DEFAULT_ENDING.ctaLabel}
         revealed={endingRevealed}
         onCta={() => alert('Builder coming in Phase 4 — for now, this just confirms the CTA wiring works.')}
       />

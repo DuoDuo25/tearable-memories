@@ -20,10 +20,17 @@ export interface Photo {
   subtitle: string;
 }
 
+export interface EndingText {
+  title: string;
+  sub: string;
+}
+
 export interface BootOptions {
   canvas: HTMLCanvasElement;
   /** 1–5 photos. Top of the array = first thing user sees (visual top). */
   photos: Photo[];
+  /** Always-painted backdrop: visible through any tear in any photo layer. */
+  ending: EndingText;
   /** Fired once when the user has torn through all photos. */
   onEndingReveal?: () => void;
 }
@@ -165,6 +172,84 @@ function drawPhotoTexture(
   return c;
 }
 
+/**
+ * Paint the always-on ending backdrop: a black field with the title +
+ * subtitle centered. Sits behind every photo layer so torn holes reveal
+ * the text immediately.
+ */
+function drawEndingTexture(W: number, H: number, dpr: number, ending: EndingText): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d')!;
+
+  // Solid dark base + soft radial highlight from center for depth.
+  x.fillStyle = '#0d0d0f';
+  x.fillRect(0, 0, W, H);
+  const glow = x.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.6);
+  glow.addColorStop(0, 'rgba(255,255,255,0.07)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = glow;
+  x.fillRect(0, 0, W, H);
+
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+
+  // Title — small caps, mono, letter-spaced.
+  const titleSize = Math.max(11 * dpr, Math.min(W, H) * 0.018);
+  x.font = `600 ${titleSize}px 'Space Grotesk', 'Inter', sans-serif`;
+  x.fillStyle = 'rgba(255,255,255,0.72)';
+  x.shadowColor = 'rgba(0,0,0,0.85)';
+  x.shadowBlur = 16 * dpr;
+  drawSpacedText(x, ending.title.toUpperCase(), W / 2, H / 2 - titleSize * 4.5, titleSize * 0.32);
+
+  // Subtitle — large italic, line-wrapped if too wide.
+  const subSize = Math.min(W, H) * 0.072;
+  x.font = `800 italic ${subSize}px 'Inter', 'Helvetica Neue', sans-serif`;
+  x.fillStyle = 'rgba(255,255,255,0.98)';
+  x.shadowColor = 'rgba(0,0,0,0.95)';
+  x.shadowBlur = 30 * dpr;
+  drawWrappedText(x, ending.sub, W / 2, H / 2 + subSize * 0.2, W * 0.85, subSize * 1.18);
+
+  x.shadowBlur = 0;
+  return c;
+}
+
+function drawSpacedText(ctx: CanvasRenderingContext2D, text: string, cx: number, y: number, spacing: number) {
+  let total = 0;
+  const chars = Array.from(text);
+  for (const ch of chars) total += ctx.measureText(ch).width;
+  total += spacing * Math.max(0, chars.length - 1);
+  let x = cx - total / 2;
+  for (const ch of chars) {
+    const w = ctx.measureText(ch).width;
+    ctx.fillText(ch, x + w / 2, y);
+    x += w + spacing;
+  }
+}
+
+function drawWrappedText(
+  ctx: CanvasRenderingContext2D, text: string,
+  cx: number, y: number, maxWidth: number, lineHeight: number
+) {
+  const chars = Array.from(text);
+  const lines: string[] = [];
+  let current = '';
+  for (const ch of chars) {
+    const test = current + ch;
+    if (ctx.measureText(test).width > maxWidth && current.length > 0) {
+      lines.push(current);
+      current = ch;
+    } else {
+      current = test;
+    }
+  }
+  if (current) lines.push(current);
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], cx, startY + i * lineHeight);
+  }
+}
+
 class Cloth {
   cols: number;
   rows: number;
@@ -282,10 +367,17 @@ class Cloth {
   }
 
   isPristine(): boolean {
+    // Any broken constraint? Definitely not pristine.
+    const cs = this.constraints;
+    for (let i = 0; i < cs.length; i++) if (cs[i].broken) return false;
+    // Any displaced point? An exhaustive scan over <1000 points is far cheaper
+    // (~0.05ms) than the textured-triangle render path it gates (~5–15ms), and
+    // the previous sampling approach (every 9th point) introduced a one-pull
+    // lag where the user's first drag was invisible until a sampled point
+    // happened to move.
     const pts = this.points;
-    const step = Math.max(1, Math.floor(pts.length / 24));
     const eps = 0.5;
-    for (let i = 0; i < pts.length; i += step) {
+    for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
       if (Math.abs(p.x - p.tx) > eps || Math.abs(p.y - p.ty) > eps) return false;
     }
@@ -403,7 +495,7 @@ function drawTexturedTriangle(
 // ============================================================
 
 export async function boot(opts: BootOptions): Promise<EngineHandle> {
-  const { canvas, photos, onEndingReveal } = opts;
+  const { canvas, photos, ending, onEndingReveal } = opts;
   if (photos.length < 1 || photos.length > 5) {
     throw new Error('boot: photos must have 1–5 entries (got ' + photos.length + ')');
   }
@@ -429,6 +521,7 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
   let layers: Cloth[] = [];
   let currentTopIdx = 0;
   let endingRevealed = false;
+  let endingTexture: HTMLCanvasElement | null = null;
 
   function resize() {
     const cw = window.innerWidth;
@@ -440,6 +533,9 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
   }
 
   function buildScene() {
+    // Bottom-most: ending text. Always painted, peeks through any tear.
+    endingTexture = drawEndingTexture(W, H, dpr, ending);
+
     layers = [];
     // Texture-z order: layers[0] is the bottom-most (revealed last).
     // Caller passes photos with photos[0] = top (first visible). Reverse for stack.
@@ -556,6 +652,9 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
     ctx.imageSmoothingQuality = 'low';
     ctx.fillStyle = '#0d0d0f';
     ctx.fillRect(0, 0, W, H);
+
+    // Always-on ending backdrop — visible through any photo tear.
+    if (endingTexture) ctx.drawImage(endingTexture, 0, 0);
 
     for (let i = 0; i < currentTopIdx; i++) {
       ctx.drawImage(layers[i].texture, 0, 0);
