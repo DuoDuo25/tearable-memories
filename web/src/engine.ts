@@ -693,14 +693,16 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
       const top = layers[currentTopIdx];
       const offRatio = top.offRatio(W, H);
 
-      // Single threshold across all layers: 22% torn or 28% off-screen.
-      // Previously we used 45% for layer-demote and 22% only for the ending
-      // reveal — but the user reported "the upper photo looks almost fully
-      // torn yet I still can't grab the next one." That's 45% gating past
-      // the visual point at which the cloth feels done. Matching the demote
-      // threshold to the ending one makes progression feel consistent: the
-      // moment a layer reads as torn, you can dig into the next.
-      const torn = top.tornRatio() > 0.22 || offRatio > 0.28;
+      // Threshold scales with grid density. Mobile uses 18×12 (~400
+      // constraints), desktop 36×22 (~1500). The same percentage on the
+      // sparse mobile grid is way more visually destructive — at 22% on
+      // mobile the cloth looks barely scratched but the layer demotes,
+      // which the user reported as "first layer barely torn and we already
+      // moved on." Bump mobile to 40%/45% so the effort matches what the
+      // eye sees.
+      const tornGate = isMobile ? 0.40 : 0.22;
+      const offGate  = isMobile ? 0.45 : 0.28;
+      const torn = top.tornRatio() > tornGate || offRatio > offGate;
       if (torn) {
         if (currentTopIdx > 0) currentTopIdx--;
         else {
@@ -715,8 +717,15 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
   }
 
   function render() {
+    // 'medium' (bicubic-ish) preserves edges and texture in the warped
+    // triangles substantially better than 'low' (bilinear). When the user
+    // is actually tearing — the moment we switch from drawImage-flat
+    // (pristine) to per-triangle render — 'low' shows visible mush around
+    // photo edges and the baked caption text. After Phase 3's debris
+    // perf fixes (no shadow on debris, skip render on off-screen debris)
+    // we've got headroom to afford 'medium' on the active top.
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'low';
+    ctx.imageSmoothingQuality = 'medium';
     ctx.fillStyle = '#0d0d0f';
     ctx.fillRect(0, 0, W, H);
 
