@@ -55,23 +55,37 @@ export function createAlbum(body: CreateAlbumBody): Promise<CreateAlbumResponse>
 
 /**
  * Upload one photo binary to the same-origin worker, which writes it to
- * R2 server-side. Same origin means no CORS preflight (the direct-to-R2
- * presigned-PUT path was breaking on Safari with "Load failed" because
- * the bucket has no CORS policy configured).
+ * R2 server-side. Same origin = no CORS preflight (direct-to-R2 presigned
+ * PUT was failing on Safari with "Load failed").
+ *
+ * We send an ArrayBuffer body, not a Blob: `fetch(... body: blob)` has
+ * been flaky in iOS Safari (older WebKit issues with PUT + Blob streaming
+ * over cellular — connection resets mid-upload turn into a generic
+ * "Load failed"). ArrayBuffer is buffered, fixed length, and the engine
+ * sets Content-Length cleanly.
  */
 export async function uploadPhoto(
   albumId: string, position: number, blob: Blob, editToken: string
 ): Promise<void> {
-  const res = await fetch(`/api/public/albums/${albumId}/photos/${position}`, {
-    method: 'PUT',
-    headers: {
-      'content-type': blob.type || 'application/octet-stream',
-      'x-edit-token': editToken,
-    },
-    body: blob,
-  });
+  const buf = await blob.arrayBuffer();
+  let res: Response;
+  try {
+    res = await fetch(`/api/public/albums/${albumId}/photos/${position}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': blob.type || 'application/octet-stream',
+        'x-edit-token': editToken,
+      },
+      body: buf,
+    });
+  } catch (e) {
+    // Network-level failure (connection drop, ATS, etc.). Surface a more
+    // useful message than Safari's bare "Load failed".
+    const detail = e instanceof Error ? e.message : String(e);
+    throw new Error(`network error uploading photo ${position}: ${detail}`);
+  }
   if (!res.ok) {
-    let detail = `${res.status}`;
+    let detail = `HTTP ${res.status}`;
     try {
       const body = await res.json();
       if (body?.error) detail = body.error;

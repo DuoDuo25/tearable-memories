@@ -209,12 +209,14 @@ export function BuilderModal({ open, onClose, edit }: BuilderModalProps) {
         cta_label: endingCta || undefined,
       });
 
-      let done = 0;
-      await Promise.all(resized.map(async (img, i) => {
-        await uploadPhoto(created.id, i, img.blob, created.edit_token);
-        done++;
-        setProgress({ resized: newSlots.length, uploaded: done });
-      }));
+      // Sequential upload. Mobile Safari struggles with 4+ parallel HTTPS
+      // PUTs of multi-megabyte bodies — connection resets mid-upload turn
+      // into a generic "Load failed". One-at-a-time is slower but reliable
+      // on cellular; 5 photos × ~1 MB sequential is still under 5 s.
+      for (let i = 0; i < resized.length; i++) {
+        await uploadPhoto(created.id, i, resized[i].blob, created.edit_token);
+        setProgress({ resized: newSlots.length, uploaded: i + 1 });
+      }
 
       await finalizeAlbum(created.id, created.edit_token);
 
