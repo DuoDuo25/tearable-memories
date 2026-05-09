@@ -1,11 +1,16 @@
 /**
  * Browser-side image resize. Phones routinely hand us 5–25 MB JPEG/HEIC
- * monsters; this brings them down to ~3840 px on the long side at JPEG q90,
- * matching what the engine expects from web/public/photos/* in the bundled
- * default. Result fits well under the 5 MB server cap.
+ * monsters; this brings them down to ~3840 px on the long side and a
+ * compressed format that fits comfortably under the 5 MB server cap.
  *
- * Uses a regular <canvas>; OffscreenCanvas would also work but isn't worth
- * the polyfill — this runs once per upload, not per frame.
+ * Why two-format encode (WebP → JPEG fallback): iOS Safari historically
+ * has flaky `canvas.toBlob('image/webp', q)` support — depending on the
+ * iOS version, it either ignores the type and returns PNG (which can
+ * easily be 10+ MB and overflow the server cap) or returns an empty/
+ * tiny blob. Try WebP first because it's ~3× smaller for the same visual
+ * quality, then sanity-check (size > 1 KB AND blob.type really is webp);
+ * if either check fails, re-encode as JPEG which is universally
+ * supported and only marginally bigger at q90.
  */
 
 export interface ResizedImage {
@@ -16,18 +21,8 @@ export interface ResizedImage {
   height: number;
 }
 
-// 3840 px on the LONG edge. Why not 2560: cover-mode crop on a portrait
-// phone fits the photo's *short* edge to viewport height (~2556 device px
-// at iPhone 14 Pro). For a 3:2 landscape photo to fill that without
-// upscaling, its long edge must be 2556 × 1.5 ≈ 3834. 2560 was a previous
-// optimization mistake — it forced a 1.5× upsample on landscape photos
-// rendered into portrait viewports, which read as soft / mushy.
-//
-// WebP at q88 keeps visual quality on par with JPEG q92 while being ~3×
-// smaller, so we get retina-perfect AND not-too-slow on cellular.
 const TARGET_LONG_EDGE = 3840;
-const QUALITY = 0.88;
-const OUTPUT_TYPE = 'image/webp';
+const SERVER_MAX_BYTES = 5 * 1024 * 1024;
 
 export async function resizeImage(file: File): Promise<ResizedImage> {
   const bitmap = await loadBitmap(file);
@@ -45,11 +40,39 @@ export async function resizeImage(file: File): Promise<ResizedImage> {
   ctx.drawImage(bitmap, 0, 0, w, h);
   if ('close' in bitmap) bitmap.close();
 
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    c.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), OUTPUT_TYPE, QUALITY);
-  });
+  // Try WebP first; fall back to JPEG if Safari refused or returned PNG.
+  let blob = await encodeBlob(c, 'image/webp', 0.88);
+  if (!blob || blob.type !== 'image/webp' || blob.size < 1024) {
+    blob = await encodeBlob(c, 'image/jpeg', 0.85);
+  }
+  if (!blob || blob.size === 0) {
+    throw new Error('encoder produced an empty file');
+  }
+  // Last-ditch: if even JPEG comes back over the cap (huge image at high
+  // quality), step the quality down until it fits.
+  if (blob.size > SERVER_MAX_BYTES) {
+    for (const q of [0.78, 0.7, 0.62, 0.55]) {
+      const retry = await encodeBlob(c, 'image/jpeg', q);
+      if (retry && retry.size <= SERVER_MAX_BYTES) { blob = retry; break; }
+    }
+    if (blob.size > SERVER_MAX_BYTES) {
+      throw new Error(`image too large (${(blob.size / 1024 / 1024).toFixed(1)} MB) — try a smaller photo`);
+    }
+  }
 
-  return { blob, contentType: OUTPUT_TYPE, bytes: blob.size, width: w, height: h };
+  return {
+    blob,
+    contentType: blob.type || 'image/jpeg',
+    bytes: blob.size,
+    width: w,
+    height: h,
+  };
+}
+
+function encodeBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    canvas.toBlob((b) => resolve(b), type, quality);
+  });
 }
 
 async function loadBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {

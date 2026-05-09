@@ -28,8 +28,10 @@ export interface EndingText {
 
 /** Stable button geometry shared by the canvas painter and the DOM hit-target. */
 export const ENDING_CTA_GEOMETRY = {
-  /** Used directly as a CSS value for `bottom`. Matches both DOM and canvas paint. */
-  bottomCss: 'clamp(48px, 12vh, 120px)',
+  /** Used directly as a CSS value for `bottom`. Matches both DOM and canvas paint.
+   *  Pushed up from the original 12vh because on mobile portrait the gap between
+   *  the centered subtitle text and a bottom-anchored button was visually empty. */
+  bottomCss: 'clamp(140px, 28vh, 240px)',
   /** CSS-pixel hit area — generous enough to catch finger taps. */
   hitWidthCss: 280,
   hitHeightCss: 64,
@@ -191,73 +193,90 @@ function drawPhotoTexture(
  * subtitle centered. Sits behind every photo layer so torn holes reveal
  * the text immediately.
  */
-function drawEndingTexture(W: number, H: number, dpr: number, ending: EndingText): HTMLCanvasElement {
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const x = c.getContext('2d')!;
-
+/**
+ * Paint the ending backdrop straight into the active canvas every frame.
+ *
+ * Two reasons we don't go via an offscreen texture (which we used to):
+ *   1. iOS Safari has a soft canvas memory budget — every full-screen
+ *      W×H×dpr canvas we keep alive cuts into it, and once over budget
+ *      Safari silently downsamples canvases. The text rendered into the
+ *      offscreen ending canvas then drawImage'd back to the main one
+ *      came out mushy.
+ *   2. Doing it inline lets shadowBlur values stay small (so iOS doesn't
+ *      drop into a low-resolution text path) without needing a separate
+ *      "sharp text + halo composite" pass.
+ *
+ * Cost is one extra fillRect + a handful of fillText calls per frame.
+ * Cheap; the per-triangle cloth render dominates the frame budget anyway.
+ */
+function renderEndingInline(
+  ctx: CanvasRenderingContext2D, ending: EndingText, W: number, H: number, dpr: number
+) {
   // Solid dark base + soft radial highlight from center for depth.
-  x.fillStyle = '#0d0d0f';
-  x.fillRect(0, 0, W, H);
-  const glow = x.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.6);
+  ctx.fillStyle = '#0d0d0f';
+  ctx.fillRect(0, 0, W, H);
+  const glow = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.6);
   glow.addColorStop(0, 'rgba(255,255,255,0.07)');
   glow.addColorStop(1, 'rgba(0,0,0,0)');
-  x.fillStyle = glow;
-  x.fillRect(0, 0, W, H);
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
 
-  x.textAlign = 'center';
-  x.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
 
-  // Title — small caps, mono, letter-spaced.
+  // Title — small caps, mono, letter-spaced. shadowBlur kept small (was
+  // 16*dpr, blurry on iOS); text reads sharp on the dark backdrop without
+  // a heavy halo.
   const titleSize = Math.max(11 * dpr, Math.min(W, H) * 0.018);
-  x.font = `600 ${titleSize}px 'Space Grotesk', 'Inter', sans-serif`;
-  x.fillStyle = 'rgba(255,255,255,0.72)';
-  x.shadowColor = 'rgba(0,0,0,0.85)';
-  x.shadowBlur = 16 * dpr;
-  drawSpacedText(x, ending.title.toUpperCase(), W / 2, H / 2 - titleSize * 4.5, titleSize * 0.32);
+  ctx.font = `600 ${titleSize}px 'Space Grotesk', 'Inter', sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.72)';
+  ctx.shadowColor = 'rgba(0,0,0,0.85)';
+  ctx.shadowBlur = 4 * dpr;
+  drawSpacedText(ctx, ending.title.toUpperCase(), W / 2, H / 2 - titleSize * 4.5, titleSize * 0.32);
 
-  // Subtitle — large italic, line-wrapped if too wide.
+  // Subtitle — large italic. shadowBlur was 30*dpr — Safari was rendering
+  // the text body itself at a lower resolution to compensate for the huge
+  // halo composite. 6*dpr keeps a hint of legibility shadow without
+  // tripping that path.
   const subSize = Math.min(W, H) * 0.072;
-  x.font = `800 italic ${subSize}px 'Inter', 'Helvetica Neue', sans-serif`;
-  x.fillStyle = 'rgba(255,255,255,0.98)';
-  x.shadowColor = 'rgba(0,0,0,0.95)';
-  x.shadowBlur = 30 * dpr;
-  drawWrappedText(x, ending.sub, W / 2, H / 2 + subSize * 0.2, W * 0.85, subSize * 1.18);
+  ctx.font = `800 italic ${subSize}px 'Inter', 'Helvetica Neue', sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.98)';
+  ctx.shadowColor = 'rgba(0,0,0,0.95)';
+  ctx.shadowBlur = 6 * dpr;
+  drawWrappedText(ctx, ending.sub, W / 2, H / 2 + subSize * 0.2, W * 0.85, subSize * 1.18);
 
-  // CTA button — white pill, painted as part of the canvas backdrop so it
-  // peeks through tears the same way the title/subtitle do. Click handling
-  // lives on a transparent DOM overlay positioned to match (see Ending.tsx).
+  // CTA button — white pill. Click handling lives on the transparent DOM
+  // overlay (Ending.tsx), positioned with ENDING_CTA_GEOMETRY.bottomCss.
+  // Mirror the same formula here so the visual + hit target align.
   if (ending.ctaLabel) {
     const btnFontSize = 14 * dpr;
-    x.font = `700 ${btnFontSize}px 'Inter', 'Helvetica Neue', sans-serif`;
+    ctx.font = `700 ${btnFontSize}px 'Inter', 'Helvetica Neue', sans-serif`;
     const labelText = `${ending.ctaLabel}  →`;
-    const labelW = x.measureText(labelText).width;
+    const labelW = ctx.measureText(labelText).width;
     const padX = 28 * dpr;
     const btnW = labelW + padX * 2;
     const btnH = 56 * dpr;
-    // Match DOM `bottom: clamp(48px, 12vh, 120px)` — the larger of 48 css-px
-    // and 12% of viewport height, capped at 120 css-px.
-    const bottomGap = Math.min(120 * dpr, Math.max(48 * dpr, H * 0.12));
+    // Mirrors `bottom: clamp(140px, 28vh, 240px)` — see ENDING_CTA_GEOMETRY.
+    const bottomGap = Math.min(240 * dpr, Math.max(140 * dpr, H * 0.28));
     const btnY = H - bottomGap - btnH;
     const btnX = W / 2 - btnW / 2;
 
-    x.shadowColor = 'rgba(0,0,0,0.55)';
-    x.shadowBlur = 36 * dpr;
-    x.shadowOffsetY = 14 * dpr;
-    x.fillStyle = 'rgba(255,255,255,0.98)';
-    roundedRect(x, btnX, btnY, btnW, btnH, btnH / 2);
-    x.fill();
-    x.shadowBlur = 0;
-    x.shadowOffsetY = 0;
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = 22 * dpr;
+    ctx.shadowOffsetY = 10 * dpr;
+    ctx.fillStyle = 'rgba(255,255,255,0.98)';
+    roundedRect(ctx, btnX, btnY, btnW, btnH, btnH / 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
 
-    x.fillStyle = '#0d0d0f';
-    x.textAlign = 'center';
-    x.textBaseline = 'middle';
-    x.fillText(labelText, W / 2, btnY + btnH / 2);
+    ctx.fillStyle = '#0d0d0f';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(labelText, W / 2, btnY + btnH / 2);
   }
 
-  x.shadowBlur = 0;
-  return c;
+  ctx.shadowBlur = 0;
 }
 
 function roundedRect(
@@ -629,7 +648,9 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
   let layers: Cloth[] = [];
   let currentTopIdx = 0;
   let endingRevealed = false;
-  let endingTexture: HTMLCanvasElement | null = null;
+  // Ending backdrop is rendered inline every frame (see renderEndingInline).
+  // No offscreen ending texture; iOS canvas-memory pressure was making the
+  // round-trip texture come back blurry.
 
   function resize() {
     const cw = window.innerWidth;
@@ -641,9 +662,6 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
   }
 
   function buildScene() {
-    // Bottom-most: ending text. Always painted, peeks through any tear.
-    endingTexture = drawEndingTexture(W, H, dpr, ending);
-
     layers = [];
     // Texture-z order: layers[0] is the bottom-most (revealed last).
     // Caller passes photos with photos[0] = top (first visible). Reverse for stack.
@@ -758,11 +776,10 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
     // plenty of frame budget on the active top layer.
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.fillStyle = '#0d0d0f';
-    ctx.fillRect(0, 0, W, H);
 
-    // Always-on ending backdrop — visible through any photo tear.
-    if (endingTexture) ctx.drawImage(endingTexture, 0, 0);
+    // Always-on ending backdrop, painted directly — also fills the canvas
+    // with the dark base, so no separate fillRect is needed before this.
+    renderEndingInline(ctx, ending, W, H, dpr);
 
     for (let i = 0; i < currentTopIdx; i++) {
       ctx.drawImage(layers[i].texture, 0, 0);
