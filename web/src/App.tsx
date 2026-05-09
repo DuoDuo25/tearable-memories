@@ -3,6 +3,7 @@ import { boot, type EngineHandle, type Photo, type EndingText } from './engine';
 import { DEFAULT_PHOTOS, DEFAULT_ENDING } from './photos';
 import { Ending } from './components/Ending';
 import { Loader } from './components/Loader';
+import { TearHint } from './components/TearHint';
 import { BuilderModal, type EditContext } from './components/BuilderModal';
 import { parseRoute, type RouteIntent } from './lib/route';
 import { readAlbum } from './lib/api';
@@ -27,6 +28,10 @@ function stripArrow(s: string | null | undefined): string {
 
 export default function App() {
   const route = useMemo<RouteIntent>(parseRoute, []);
+  const isMobile = useMemo(() =>
+    window.matchMedia('(max-width: 640px)').matches
+    || ('ontouchstart' in window && window.innerWidth < 900),
+  []);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handleRef = useRef<EngineHandle | null>(null);
 
@@ -37,6 +42,9 @@ export default function App() {
   const [loaderFading, setLoaderFading] = useState(false);
   const [loaderMessage, setLoaderMessage] = useState<string | undefined>();
   const [builderOpen, setBuilderOpen] = useState(false);
+  // Onboarding overlay — only when arriving on someone else's shared
+  // album, where the visitor has no prior context for "what is this."
+  const [showHint, setShowHint] = useState(false);
 
   // 1. For non-template routes, fetch the album.
   useEffect(() => {
@@ -120,6 +128,21 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
+  // 5. Show the tear hint once the engine has booted on the first visit
+  // ever — both fresh `/` (Aini's template) and `/m/<id>` shared albums
+  // benefit from the gesture cue. Editor route is exempt (those visitors
+  // already know the format). Marker persists in localStorage so the same
+  // device doesn't see the hint twice.
+  useEffect(() => {
+    if (route.kind === 'editor') return;
+    if (!loaderFading) return;
+    try {
+      if (localStorage.getItem('tm.hint.seen') === '1') return;
+    } catch { /* localStorage might be blocked — degrade to "always show" */ }
+    setShowHint(true);
+    try { localStorage.setItem('tm.hint.seen', '1'); } catch { /* ignore */ }
+  }, [route.kind, loaderFading]);
+
   return (
     <>
       <canvas ref={canvasRef} className="fixed top-0 left-0 block" />
@@ -130,6 +153,7 @@ export default function App() {
         setBuilderOpen(true);
       }} />
       <Loader fading={loaderFading} message={loaderMessage} />
+      {showHint && <TearHint isMobile={isMobile} />}
       <BuilderModal
         open={builderOpen}
         onClose={() => setBuilderOpen(false)}
