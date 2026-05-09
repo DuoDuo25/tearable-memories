@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resizeImage, isImageFile, type ResizedImage } from '../lib/resize';
 import {
-  createAlbum, uploadToPresigned, finalizeAlbum, updateAlbum,
+  createAlbum, uploadPhoto, finalizeAlbum, updateAlbum,
   type ReadAlbumResponse,
 } from '../lib/api';
 import { viewerPath, editorPath } from '../lib/route';
@@ -210,8 +210,8 @@ export function BuilderModal({ open, onClose, edit }: BuilderModalProps) {
       });
 
       let done = 0;
-      await Promise.all(created.uploads.map(async (slot) => {
-        await uploadToPresigned(slot, resized[slot.position].blob);
+      await Promise.all(resized.map(async (img, i) => {
+        await uploadPhoto(created.id, i, img.blob, created.edit_token);
         done++;
         setProgress({ resized: newSlots.length, uploaded: done });
       }));

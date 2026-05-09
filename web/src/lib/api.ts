@@ -17,17 +17,10 @@ export interface CreateAlbumBody {
   cta_label?: string;
 }
 
-export interface UploadSlot {
-  position: number;
-  uploadUrl: string;
-  requiredHeaders: Record<string, string>;
-  s3Uri: string;
-}
-
 export interface CreateAlbumResponse {
   id: string;
   edit_token: string;
-  uploads: UploadSlot[];
+  photo_count: number;
 }
 
 export interface ReadAlbumResponse {
@@ -60,14 +53,31 @@ export function createAlbum(body: CreateAlbumBody): Promise<CreateAlbumResponse>
   });
 }
 
-/** Upload a single blob to its presigned PUT URL. */
-export async function uploadToPresigned(slot: UploadSlot, blob: Blob): Promise<void> {
-  const res = await fetch(slot.uploadUrl, {
+/**
+ * Upload one photo binary to the same-origin worker, which writes it to
+ * R2 server-side. Same origin means no CORS preflight (the direct-to-R2
+ * presigned-PUT path was breaking on Safari with "Load failed" because
+ * the bucket has no CORS policy configured).
+ */
+export async function uploadPhoto(
+  albumId: string, position: number, blob: Blob, editToken: string
+): Promise<void> {
+  const res = await fetch(`/api/public/albums/${albumId}/photos/${position}`, {
     method: 'PUT',
-    headers: slot.requiredHeaders,
+    headers: {
+      'content-type': blob.type || 'application/octet-stream',
+      'x-edit-token': editToken,
+    },
     body: blob,
   });
-  if (!res.ok) throw new Error(`upload position ${slot.position}: HTTP ${res.status}`);
+  if (!res.ok) {
+    let detail = `${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) detail = body.error;
+    } catch { /* ignore */ }
+    throw new Error(`photo ${position}: ${detail}`);
+  }
 }
 
 export function finalizeAlbum(id: string, editToken: string): Promise<{ ok: true; id: string; status: string }> {
