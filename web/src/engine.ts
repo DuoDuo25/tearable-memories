@@ -73,7 +73,15 @@ interface Constraint {
   broken: boolean;
 }
 
-const TRI_OVERDRAW = 0.6;
+// Triangle clip-path overdraw, in device pixels per vertex. Adjacent
+// triangles overlap by 2× this along their shared edge, fully covering
+// the canvas's anti-aliased clip-edge fade. 0.6 was enough at dpr=2
+// (1.2 device px = ≈0.6 CSS px overlap), but on iOS Safari at dpr=3
+// the user saw visible triangle seams across every photo — iOS's AA
+// filter is wider than Chromium's. 1.5 device px (≈1.0 CSS px overlap)
+// covers it. Texture overlap is invisible because both triangles
+// sample the same source.
+const TRI_OVERDRAW = 1.5;
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
