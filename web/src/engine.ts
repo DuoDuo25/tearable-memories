@@ -125,11 +125,15 @@ function drawPhotoTexture(
     x.fillRect(Math.random() * W, Math.random() * H, dpr, dpr);
   }
 
-  // 3. Bottom gradient for caption legibility
+  // 3. Bottom gradient for caption legibility — tuned light. On mobile
+  // the bottom-left of a dark photo (e.g. Lacha's palm-tree silhouettes)
+  // combined with a strong dark gradient + dark caption shadow read as
+  // "a hole in the cloth" instead of "a moody photo edge." Halving the
+  // peak alpha keeps captions readable but lets the photo show through.
   const grad = x.createLinearGradient(0, H * 0.55, 0, H);
   grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(0.55, 'rgba(0,0,0,0.35)');
-  grad.addColorStop(1, 'rgba(0,0,0,0.78)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.18)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.42)');
   x.fillStyle = grad;
   x.fillRect(0, 0, W, H);
 
@@ -315,17 +319,24 @@ class Cloth {
   points: ClothPoint[];
   constraints: Constraint[];
 
-  // Tuning (kept in sync with v1 commit 7ebc01b — known-good values).
-  breakRatio = 1.7;
-  damping = 0.985;
+  // Tuning. Mobile is intentionally tougher: smaller cell sizes amplify
+  // per-frame stress, and a finger drag conveys more momentum than a
+  // mouse cursor — leaving the cloth feeling "self-tearing" once any
+  // gap appeared. Higher breakRatio and damping give the user the
+  // physical-resistance feel they wanted: each pull does work; a single
+  // light tug doesn't cascade the whole sheet.
+  breakRatio: number;
+  damping: number;
   iterations = 4;
   gravity: number;
 
-  constructor(cols: number, rows: number, w: number, h: number, texture: HTMLCanvasElement, dpr: number) {
+  constructor(cols: number, rows: number, w: number, h: number, texture: HTMLCanvasElement, dpr: number, isMobile = false) {
     this.cols = cols;
     this.rows = rows;
     this.texture = texture;
-    this.gravity = 1300 * dpr;
+    this.breakRatio = isMobile ? 2.4 : 1.7;
+    this.damping    = isMobile ? 0.991 : 0.985;
+    this.gravity    = (isMobile ? 950 : 1300) * dpr;
     this.points = new Array(cols * rows);
     this.constraints = [];
 
@@ -627,7 +638,7 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
     const stackBottomToTop = [...loaded].reverse();
     for (let i = 0; i < stackBottomToTop.length; i++) {
       const tex = drawPhotoTexture(stackBottomToTop[i], W, H, dpr);
-      layers.push(new Cloth(TOP_COLS, TOP_ROWS, W, H, tex, dpr));
+      layers.push(new Cloth(TOP_COLS, TOP_ROWS, W, H, tex, dpr, isMobile));
     }
     currentTopIdx = layers.length - 1;
     endingRevealed = false;
