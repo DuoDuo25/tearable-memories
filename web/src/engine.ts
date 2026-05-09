@@ -582,9 +582,20 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
   // Mobile grid is intentionally smaller — at dpr=3 the textured-triangle pass
   // is the bottleneck. 18×12 keeps tear silhouettes detailed enough on a 393-px
   // viewport while dropping ~30% of per-frame drawImage work vs 20×14.
-  const TOP_COLS = isMobile ? 18 : 36;
-  const TOP_ROWS = isMobile ? 12 : 22;
-  const GRAB_RADIUS = 110;
+  // Mobile grid was 18×12. The bigger per-triangle area meant each warped
+  // drawImage covered a larger chunk of the source texture, and bilinear/
+  // bicubic interpolation across that big a stretch reads as "mushy" — the
+  // user's "photos and bottom captions look blurry on mobile" complaint.
+  // 24×16 keeps each triangle small enough that the texture sampling stays
+  // sharp; with the debris-perf cleanup it still hits 60fps on iPhone.
+  const TOP_COLS = isMobile ? 24 : 36;
+  const TOP_ROWS = isMobile ? 16 : 22;
+  // Brush radius scales with viewport. 110 CSS px = 28% of an iPhone 390px
+  // viewport but only 7.6% of a 1440px desktop. Same value meant a finger
+  // on mobile hauled away ~4× the proportion of cloth a desktop cursor
+  // would, which the user reported as "too easy on mobile". 70px on mobile
+  // restores the desktop's relative pinch.
+  const GRAB_RADIUS = isMobile ? 70 : 110;
 
   // Load all source images first (so we can build textures synchronously after).
   const loaded: LoadedPhoto[] = await Promise.all(
@@ -717,15 +728,13 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
   }
 
   function render() {
-    // 'medium' (bicubic-ish) preserves edges and texture in the warped
-    // triangles substantially better than 'low' (bilinear). When the user
-    // is actually tearing — the moment we switch from drawImage-flat
-    // (pristine) to per-triangle render — 'low' shows visible mush around
-    // photo edges and the baked caption text. After Phase 3's debris
-    // perf fixes (no shadow on debris, skip render on off-screen debris)
-    // we've got headroom to afford 'medium' on the active top.
+    // 'high' (Lanczos-class on most browsers) keeps the warped triangles
+    // crisp even when they're stretched, vs 'medium's softer bicubic. The
+    // user pushed back against any softness — modern phones have GPU-
+    // accelerated drawImage and the Phase-3 debris cleanup gives us
+    // plenty of frame budget on the active top layer.
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'medium';
+    ctx.imageSmoothingQuality = 'high';
     ctx.fillStyle = '#0d0d0f';
     ctx.fillRect(0, 0, W, H);
 
