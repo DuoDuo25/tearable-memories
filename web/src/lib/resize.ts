@@ -16,13 +16,17 @@ export interface ResizedImage {
   height: number;
 }
 
-// 2560 px is the sweet spot for retina mobile: an iPhone 14 Pro at viewport
-// 393×852 with devicePixelRatio=3 needs at most 2556 device pixels in the
-// taller dimension for cover-mode rendering. Anything bigger is wasted bytes.
-// WebP at q90 reads visually identical to JPEG q92 while being ~3× smaller,
-// so we get retina-perfect sharpness AND fast mobile loads.
-const TARGET_LONG_EDGE = 2560;
-const QUALITY = 0.9;
+// 3840 px on the LONG edge. Why not 2560: cover-mode crop on a portrait
+// phone fits the photo's *short* edge to viewport height (~2556 device px
+// at iPhone 14 Pro). For a 3:2 landscape photo to fill that without
+// upscaling, its long edge must be 2556 × 1.5 ≈ 3834. 2560 was a previous
+// optimization mistake — it forced a 1.5× upsample on landscape photos
+// rendered into portrait viewports, which read as soft / mushy.
+//
+// WebP at q88 keeps visual quality on par with JPEG q92 while being ~3×
+// smaller, so we get retina-perfect AND not-too-slow on cellular.
+const TARGET_LONG_EDGE = 3840;
+const QUALITY = 0.88;
 const OUTPUT_TYPE = 'image/webp';
 
 export async function resizeImage(file: File): Promise<ResizedImage> {

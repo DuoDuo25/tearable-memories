@@ -320,23 +320,30 @@ class Cloth {
   constraints: Constraint[];
 
   // Tuning. Mobile is intentionally tougher: smaller cell sizes amplify
-  // per-frame stress, and a finger drag conveys more momentum than a
-  // mouse cursor — leaving the cloth feeling "self-tearing" once any
-  // gap appeared. Higher breakRatio and damping give the user the
-  // physical-resistance feel they wanted: each pull does work; a single
-  // light tug doesn't cascade the whole sheet.
+  // per-frame stress and a finger drag conveys more momentum than a mouse
+  // cursor, so a single small pull was cascading into a full collapse.
+  //
+  // Note on `damping`: it's the velocity retention multiplier per frame
+  // (verlet implicit velocity = (p.x - p.ox) * damping). HIGHER value =
+  // LESS friction = momentum persists longer = cascades propagate further.
+  // Pass 3 had this wrong (bumped 0.985→0.991 thinking "more damp =
+  // tougher"). Reversed here: mobile gets a much smaller value (0.96)
+  // for substantially more frame-to-frame friction, killing the
+  // self-tearing cascade where torn-edge points kept yanking neighbors
+  // until the whole sheet fell.
   breakRatio: number;
   damping: number;
-  iterations = 4;
+  iterations: number;
   gravity: number;
 
   constructor(cols: number, rows: number, w: number, h: number, texture: HTMLCanvasElement, dpr: number, isMobile = false) {
     this.cols = cols;
     this.rows = rows;
     this.texture = texture;
-    this.breakRatio = isMobile ? 2.4 : 1.7;
-    this.damping    = isMobile ? 0.991 : 0.985;
-    this.gravity    = (isMobile ? 950 : 1300) * dpr;
+    this.breakRatio = isMobile ? 2.8 : 1.7;
+    this.damping    = isMobile ? 0.960 : 0.985;
+    this.iterations = isMobile ? 5 : 4;
+    this.gravity    = (isMobile ? 800 : 1300) * dpr;
     this.points = new Array(cols * rows);
     this.constraints = [];
 
@@ -407,7 +414,7 @@ class Cloth {
     // Border points whose inward neighbor tore away become free → torn chunks fall.
     for (let i = 0; i < points.length; i++) {
       const p = points[i];
-      if (p.pinned && p.edge && p.brokenLinks >= 1) p.pinned = false;
+      if (p.pinned && p.edge && p.brokenLinks >= 2) p.pinned = false;
     }
   }
 
@@ -588,8 +595,13 @@ export async function boot(opts: BootOptions): Promise<EngineHandle> {
   const ctx = canvas.getContext('2d', { alpha: false })!;
   const isMobile = window.matchMedia('(max-width: 640px)').matches
                 || ('ontouchstart' in window && window.innerWidth < 900);
-  // Cap dpr at 3 to match modern retina phones exactly.
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  // Round dpr up to an integer (Math.ceil), then cap at 3. iOS reports
+  // integer dpr (2 or 3) but a chunk of Android phones report fractional
+  // values like 2.625 / 2.75 — when the canvas backing buffer is at a
+  // fractional dpr, every pixel of the output ends up sampling between
+  // source pixels and the whole scene reads as soft. Rounding up
+  // guarantees pixel-grid alignment.
+  const dpr = Math.min(Math.ceil(window.devicePixelRatio || 1), 3);
   // Mobile grid is intentionally smaller — at dpr=3 the textured-triangle pass
   // is the bottleneck. 18×12 keeps tear silhouettes detailed enough on a 393-px
   // viewport while dropping ~30% of per-frame drawImage work vs 20×14.
